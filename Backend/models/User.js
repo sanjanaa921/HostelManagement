@@ -30,8 +30,14 @@ const UserSchema = new Schema({
   },
   gender: {
     type: String,
-    enum: ['Male', 'Female', 'Other', ''],
-    default: ''
+    enum: ['Male', 'Female'],
+    required: true
+  },
+  hostel: {
+    type: String,
+    enum: ['boys', 'girls'],
+    required: true,
+    default: 'boys'
   },
   course: {
     type: String,

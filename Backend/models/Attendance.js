@@ -11,9 +11,19 @@ const AttendanceSchema = new Schema({
     type: String,
     required: true
   },
+  studentId: {
+    type: String,
+    default: ''
+  },
   room_no: {
     type: Number,
     required: true
+  },
+  hostel: {
+    type: String,
+    enum: ['boys', 'girls'],
+    required: true,
+    default: 'boys'
   },
   date: {
     type: Date,

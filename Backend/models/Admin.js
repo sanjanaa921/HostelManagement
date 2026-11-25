@@ -20,8 +20,13 @@ const AdminSchema = new Schema({
   },
   role: {
     type: String,
-    enum: ['superadmin', 'warden', 'gate_security', 'mess_manager'],
-    default: 'warden'
+    enum: ['admin', 'superadmin', 'warden', 'gate_security', 'mess_manager'],
+    default: 'admin'
+  },
+  assignedHostel: {
+    type: String,
+    enum: ['all', 'boys', 'girls'],
+    default: 'all'
   },
   date: {
     type: Date,

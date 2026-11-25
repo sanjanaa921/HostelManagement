@@ -8,7 +8,6 @@ const Attendance = require('../models/Attendance');
 const fetchuser = require('../middleware/fetchuser');
 
 // ============ File Upload Setup ============
-// Store profile photos in /Backend/uploads/
 const uploadsDir = path.join(__dirname, '..', 'uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
@@ -23,7 +22,7 @@ const storage = multer.diskStorage({
 });
 
 const fileFilter = (req, file, cb) => {
-  if (file.mimetype.startsWith('image/')) {
+  if (file.mimetype && file.mimetype.startsWith('image/')) {
     cb(null, true);
   } else {
     cb(new Error('Only image files are allowed.'), false);
@@ -32,12 +31,12 @@ const fileFilter = (req, file, cb) => {
 
 const upload = multer({ storage, fileFilter, limits: { fileSize: 5 * 1024 * 1024 } }); // 5MB limit
 
-// ============ Attendance Configuration ============
-// Campus GPS coordinates and allowed radius
-// These should ideally be stored in a Settings collection in MongoDB
-const CAMPUS_LAT = parseFloat(process.env.CAMPUS_LAT) || 31.398038;   // NITJ Campus default
-const CAMPUS_LON = parseFloat(process.env.CAMPUS_LON) || 75.531505;
-const CAMPUS_RADIUS_METERS = parseFloat(process.env.CAMPUS_RADIUS_METERS) || 500; // 500 meter radius
+// ============ Campus GPS Configuration ============
+// Configured for Parul University Goa Campus (Village Quitol / Canaguinim, South Goa)
+const CAMPUS_NAME = process.env.CAMPUS_NAME || 'Parul University Goa Campus';
+const CAMPUS_LAT = parseFloat(process.env.CAMPUS_LAT) || 15.1580;
+const CAMPUS_LON = parseFloat(process.env.CAMPUS_LON) || 74.0430;
+const CAMPUS_RADIUS_METERS = parseFloat(process.env.CAMPUS_RADIUS_METERS) || 1000;
 
 /**
  * Calculate distance between two GPS coordinates using Haversine formula
@@ -59,70 +58,76 @@ function getDistanceMeters(lat1, lon1, lat2, lon2) {
 }
 
 /**
+ * GET /api/a/config
+ * Returns current campus geo-fence parameters
+ * Public configuration endpoint
+ */
+router.get('/config', async (req, res) => {
+  return res.json({
+    response: true,
+    campusName: CAMPUS_NAME,
+    campusLat: CAMPUS_LAT,
+    campusLon: CAMPUS_LON,
+    campusRadiusMeters: CAMPUS_RADIUS_METERS,
+    latitude: CAMPUS_LAT,
+    longitude: CAMPUS_LON,
+    radiusMeters: CAMPUS_RADIUS_METERS
+  });
+});
+
+/**
  * POST /api/a/attend
  * Mark attendance: Student submits selfie + GPS coordinates
  * Protected: Student
- * 
- * Request: multipart/form-data with 'file' (image), 'latitude', 'longitude'
- * 
- * Flow:
- * 1. Verify student has a room allocated
- * 2. Check GPS is within campus perimeter
- * 3. Check for duplicate attendance today
- * 4. (Optional: If Python face service is running, verify face)
- * 5. Record attendance
  */
 router.post('/attend', fetchuser, upload.single('file'), async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
     if (!user) {
+      if (req.file) fs.unlink(req.file.path, () => {});
       return res.status(404).json({ response: false, message: 'Student account not found.' });
     }
 
     if (!user.room_no || user.room_no === 0) {
+      if (req.file) fs.unlink(req.file.path, () => {});
       return res.status(403).json({
         response: false,
-        message: 'You must have a room allocated before marking attendance.'
+        message: 'You must have a room allocated in your hostel before marking daily roll call.'
       });
     }
 
-    // Parse GPS coordinates from request
+    // Parse GPS coordinates
     const latitude = parseFloat(req.body.latitude);
     const longitude = parseFloat(req.body.longitude);
 
-    // Location verification
     let locationVerified = false;
     let locationMessage = '';
+    let distanceMeters = null;
 
     if (!isNaN(latitude) && !isNaN(longitude)) {
-      const distanceMeters = getDistanceMeters(latitude, longitude, CAMPUS_LAT, CAMPUS_LON);
+      distanceMeters = getDistanceMeters(latitude, longitude, CAMPUS_LAT, CAMPUS_LON);
       if (distanceMeters <= CAMPUS_RADIUS_METERS) {
         locationVerified = true;
-        locationMessage = `Location verified. You are ${Math.round(distanceMeters)}m from campus center.`;
+        locationMessage = `Verified within ${CAMPUS_NAME} (${Math.round(distanceMeters)}m from campus center).`;
       } else {
-        locationMessage = `Location check failed. You are ${Math.round(distanceMeters)}m from campus. Must be within ${CAMPUS_RADIUS_METERS}m.`;
+        locationVerified = false;
+        locationMessage = `Location verification failed: You are ${Math.round(distanceMeters)}m away from ${CAMPUS_NAME} (Allowed radius: ${CAMPUS_RADIUS_METERS}m).`;
       }
     } else {
-      locationMessage = 'GPS coordinates could not be read. Location verification skipped.';
-      // For the MCA project demo: allow attendance without strict GPS
-      // In production: return error if GPS is required
-      locationVerified = true; // Lenient for demo
+      locationVerified = false;
+      locationMessage = 'GPS coordinates were not provided or location access was unavailable.';
     }
 
-    // For demo/development: allow attendance without GPS enforcement
-    // Set STRICT_GPS=true in .env to enforce GPS location
+    // Enforce STRICT_GPS when enabled
     if (process.env.STRICT_GPS === 'true' && !locationVerified) {
-      // Clean up uploaded file if any
-      if (req.file) {
-        fs.unlink(req.file.path, () => {});
-      }
+      if (req.file) fs.unlink(req.file.path, () => {});
       return res.status(403).json({
         response: false,
         message: locationMessage
       });
     }
 
-    // Check for duplicate attendance today (same calendar day)
+    // Check for duplicate attendance on the same calendar day
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const todayEnd = new Date();
@@ -134,62 +139,62 @@ router.post('/attend', fetchuser, upload.single('file'), async (req, res) => {
     });
 
     if (alreadyMarked) {
-      // Clean up uploaded file if any
-      if (req.file) {
-        fs.unlink(req.file.path, () => {});
-      }
+      if (req.file) fs.unlink(req.file.path, () => {});
       return res.status(400).json({
         response: false,
-        message: 'Attendance has already been marked for today. Each student can only mark attendance once per day.'
+        message: 'Attendance has already been marked for today. Each student can only record attendance once per calendar day.'
       });
     }
 
-    // Face verification (optional — requires Python service on port 8085)
+    // Face verification via Python service (if service is available)
     let faceVerified = false;
-    
+    let faceMessage = 'Face verification service not connected.';
+
     if (req.file && user.photo_url) {
-      // Try to verify with Python face service
       try {
         const axios = require('axios');
         const pythonServiceUrl = process.env.PYTHON_SERVICE_URL || 'http://localhost:8085';
-        
-        // Construct URLs for both images
+
         const capturedImageUrl = `${process.env.BACKEND_URL || 'http://localhost:5000'}/api/a/newupload/${req.file.filename}`;
         const profileImageUrl = `${process.env.BACKEND_URL || 'http://localhost:5000'}/api/a/newupload/${user.photo_url}`;
-        
-        const faceResult = await axios.get(`${pythonServiceUrl}/check`, {
-          data: { url1: capturedImageUrl, url2: profileImageUrl },
-          timeout: 10000
-        });
-        
-        if (faceResult.data.result === true && faceResult.data.spoof !== false) {
+
+        const faceResult = await axios.post(
+          `${pythonServiceUrl}/check`,
+          { url1: capturedImageUrl, url2: profileImageUrl },
+          { timeout: 8000 }
+        );
+
+        if (faceResult.data && faceResult.data.result === true && faceResult.data.spoof !== 0) {
           faceVerified = true;
+          faceMessage = 'Face biometric identity verified.';
+        } else {
+          faceVerified = false;
+          faceMessage = faceResult.data?.message || 'Face comparison failed or spoof detected.';
         }
-      } catch (faceError) {
-        // Python service not running — skip face verification for demo
-        console.log('Python face service unavailable, skipping face verification:', faceError.message);
-        faceVerified = true; // Lenient for demo — set STRICT_FACE=true to enforce
+      } catch (faceErr) {
+        faceVerified = false;
+        faceMessage = 'Face recognition service unavailable: ' + faceErr.message;
       }
     } else {
-      // No profile photo registered or no captured image — skip for demo
-      faceVerified = true;
+      faceVerified = false;
+      faceMessage = !req.file ? 'No capture image uploaded.' : 'No reference profile photo registered.';
     }
 
     if (process.env.STRICT_FACE === 'true' && !faceVerified) {
-      if (req.file) {
-        fs.unlink(req.file.path, () => {});
-      }
+      if (req.file) fs.unlink(req.file.path, () => {});
       return res.status(403).json({
         response: false,
-        message: 'Face verification failed. Please ensure your face is clearly visible and you are physically present.'
+        message: `Face verification failed: ${faceMessage}`
       });
     }
 
-    // Record attendance
+    // Record attendance with accurate verification flags
     const record = await Attendance.create({
       user_id: req.user.id,
       name: user.name,
+      studentId: user.studentId || '',
       room_no: user.room_no,
+      hostel: user.hostel || 'boys',
       latitude: isNaN(latitude) ? 0 : latitude,
       longitude: isNaN(longitude) ? 0 : longitude,
       location_verified: locationVerified,
@@ -200,29 +205,31 @@ router.post('/attend', fetchuser, upload.single('file'), async (req, res) => {
 
     return res.json({
       response: true,
-      message: `Attendance recorded successfully! ${locationMessage}`,
-      record_id: record._id
+      message: `Daily attendance recorded successfully! ${locationMessage}`,
+      record_id: record._id,
+      attendance: record,
+      location_verified: locationVerified,
+      face_verified: faceVerified,
+      status: 'Present'
     });
 
   } catch (err) {
     console.error('Error in attend (POST):', err.message);
-    if (req.file) {
-      fs.unlink(req.file.path, () => {});
-    }
+    if (req.file) fs.unlink(req.file.path, () => {});
     return res.status(500).json({ response: false, message: 'Internal server error: ' + err.message });
   }
 });
 
 /**
  * GET /api/a/attend
- * Fetch the student's attendance history
- * Protected: Student
+ * Fetch authenticated student's attendance history
+ * Protected: Student (scoped strictly to own records)
  */
 router.get('/attend', fetchuser, async (req, res) => {
   try {
     const history = await Attendance.find({ user_id: req.user.id })
       .sort({ date: -1 })
-      .limit(90); // Last 90 days
+      .limit(90);
 
     return res.json({
       response: true,
@@ -237,7 +244,7 @@ router.get('/attend', fetchuser, async (req, res) => {
 
 /**
  * POST /api/a/newupload
- * Upload profile photo for the student
+ * Upload student profile photo
  * Protected: Student
  */
 router.post('/newupload', fetchuser, upload.single('file'), async (req, res) => {
@@ -247,8 +254,6 @@ router.post('/newupload', fetchuser, upload.single('file'), async (req, res) => 
 
   try {
     const filename = req.file.filename;
-
-    // Update user record with new photo filename
     await User.findByIdAndUpdate(req.user.id, { photo_url: filename });
 
     return res.json({
@@ -265,13 +270,10 @@ router.post('/newupload', fetchuser, upload.single('file'), async (req, res) => 
 
 /**
  * GET /api/a/newupload/:filename
- * Serve an uploaded photo file
- * Public endpoint (photos are served by filename)
+ * Public photo file delivery
  */
 router.get('/newupload/:filename', (req, res) => {
   const filename = req.params.filename;
-
-  // Sanitize filename to prevent path traversal attacks
   const sanitized = path.basename(filename);
   const filePath = path.join(uploadsDir, sanitized);
 

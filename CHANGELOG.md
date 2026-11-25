@@ -4,6 +4,51 @@ All notable changes and architectural improvements made to this repository are d
 
 ---
 
+## [2.1.0] - 2026-11-25
+
+### 🏛️ Gender-Based Boys & Girls Hostel Separation (Task 1)
+- **Schema & Database Updates**:
+  - Added required `gender` ('Male' | 'Female') and `hostel` ('boys' | 'girls') to `User` schema.
+  - Implemented automatic hostel assignment: `Male` → `boys`, `Female` → `girls`.
+  - Added compound uniqueness on `Room.js` `(hostel, room_no)`: 60 rooms in Boys Hostel (Mega Boys Block A) + 60 rooms in Girls Hostel (Kaveri Girls Block A).
+  - Added `hostel` to `Attendance`, `Complain`, `GatePass`, `Feedback`, and `MessBill` models.
+- **API Authorization & Separation**:
+  - `GET /api/b/hostelrooms`: Automatically scoped to student's registered hostel.
+  - `POST /api/b/book`: Strict validation preventing cross-hostel room booking (returns 403 Forbidden).
+  - `PATCH /api/ad/correctgender/:userId`: Admin gender correction with automatic hostel migration and safe previous room deallocation.
+  - `fetchadmin` / `resolveHostelAccess`: Enforces warden hostel restrictions while allowing superadmins full access with `?hostel=boys|girls|all`.
+
+### ⏱️ Attendance & Grievance Redressal Audit & Fix (Task 2)
+- **Smart Attendance Module**:
+  - Connected `POST /api/at/mark` with strict campus geofencing (Parul University Goa Campus `15.3911, 73.8782`, 500m radius).
+  - Enforced that GPS verification cannot silently pass when location coordinates are unavailable (`location_verified: false`).
+  - Face verification strictly gated on anti-spoofing liveness verification.
+  - `GET /api/at/studenthistory` and `GET /api/at/campus-config` fully wired.
+- **Complaint Management Module**:
+  - Fixed student complaint registration with automatic hostel tagging.
+  - Added student self-solve (`PATCH /api/c/studentsolve/:id`) and student delete (`DELETE /api/c/studentdelete/:id`).
+  - Added admin status update with warden remarks (`PATCH /api/c/updatecomplain/:id`).
+  - Connected admin complaints desk with live hostel filter tabs and search.
+
+### 🍽️ Feedback & Mess Bill Management Audit & Fix (Task 3)
+- **Student Feedback Module**:
+  - Enhanced `Feedback.js` model with `hostel` and `studentId`.
+  - Added `GET /api/f/feedback` allowing students to view their personal submission history with live status updates.
+  - Built `adminfeedback.js` Admin Feedback Desk with KPI metrics, Boys/Girls hostel filter tabs, search, and detail modal.
+  - Connected feedback submission on `temp.js` to eliminate false redirection when room number is not pre-cached.
+- **Mess Bill Management**:
+  - Added `studentId` to `MessBill.js` model.
+  - Enhanced `GET /api/m/bill` to return complete allowance breakdown, remaining balance, status badge (`Paid`, `Pending`, `Overdue`), and latest payment receipt.
+  - Implemented `GET /api/m/bills` with warden hostel filtering (`?hostel=boys|girls|all`).
+  - Implemented `POST /api/m/generate` to issue monthly student bills.
+  - Implemented `POST /api/m/payment` to record payments, recalculate balances, and flip status to `Paid` upon complete settlement.
+  - Implemented `PATCH /api/m/billstatus` for direct administrative status adjustments.
+  - Built `adminmess.js` Admin Mess Desk with KPI cards, resident picker, monthly bill generation modal, and payment recording modal.
+  - Added navigation links to `adminsidebar.js` and registered routes in `App.js`.
+  - Backfilled legacy database records to ensure 100% hostel field coverage across collections.
+
+---
+
 ## [2.0.0] - 2026-11-24
 
 ### 🚀 Major Architectural Recovery & New Backend Implementation

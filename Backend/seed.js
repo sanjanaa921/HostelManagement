@@ -12,160 +12,326 @@ const Attendance = require('./models/Attendance');
 
 const seedDatabase = async () => {
   await connectToMongo();
-  console.log('🌱 Starting database seeding...');
+  console.log('🌱 Starting database seeding and migration...');
 
   try {
-    // 1. Seed Rooms (1-20, 101-120, 201-220)
-    console.log('Creating hostel rooms...');
-    const roomsToSeed = [];
-    // Ground floor: 1 to 20
-    for (let i = 1; i <= 20; i++) {
-      roomsToSeed.push({
-        room_no: i,
-        floor: 'ground',
-        block: 'Mega Boys Block A',
-        capacity: 1,
-        occupiedBeds: 0,
-        status: 'available',
-        roomCharges: 4500,
-        amenities: ['Bed', 'Study Table', 'Cupboard', 'Ceiling Fan', 'LAN Port']
-      });
-    }
-    // 1st floor: 101 to 120
-    for (let i = 101; i <= 120; i++) {
-      roomsToSeed.push({
-        room_no: i,
-        floor: 'first',
-        block: 'Mega Boys Block A',
-        capacity: 1,
-        occupiedBeds: 0,
-        status: 'available',
-        roomCharges: 4500,
-        amenities: ['Bed', 'Study Table', 'Cupboard', 'Ceiling Fan', 'LAN Port', 'Balcony']
-      });
-    }
-    // 2nd floor: 201 to 220
-    for (let i = 201; i <= 220; i++) {
-      roomsToSeed.push({
-        room_no: i,
-        floor: 'second',
-        block: 'Mega Boys Block A',
-        capacity: 1,
-        occupiedBeds: 0,
-        status: 'available',
-        roomCharges: 4500,
-        amenities: ['Bed', 'Study Table', 'Cupboard', 'Ceiling Fan', 'LAN Port', 'Balcony']
-      });
+    // 0. Drop legacy single-field index on room_no if present
+    try {
+      await Room.collection.dropIndex('room_no_1');
+      console.log('✅ Dropped legacy single-field index room_no_1 on rooms collection');
+    } catch (err) {
+      // Index might not exist or already dropped
     }
 
-    for (const r of roomsToSeed) {
-      await Room.findOneAndUpdate({ room_no: r.room_no }, r, { upsert: true, new: true });
+    try {
+      await Room.collection.createIndex({ room_no: 1, hostel: 1 }, { unique: true });
+      console.log('✅ Ensured compound unique index { room_no: 1, hostel: 1 }');
+    } catch (err) {
+      console.log('Compound index info:', err.message);
     }
-    console.log(`✅ 60 rooms initialized across 3 floors.`);
 
-    // 2. Seed Admin
-    const adminEmail = 'admin@hostel.edu';
-    let admin = await Admin.findOne({ email: adminEmail });
-    if (!admin) {
-      const hashedAdminPassword = await bcrypt.hash('AdminPassword123', 10);
-      admin = await Admin.create({
+    // 1. Seed Rooms for Both Boys and Girls Hostels
+    console.log('Initializing rooms for Boys and Girls Hostels...');
+    const floors = [
+      { range: [1, 20], floor: 'ground' },
+      { range: [101, 120], floor: 'first' },
+      { range: [201, 220], floor: 'second' }
+    ];
+
+    const hostels = [
+      { key: 'boys', block: 'Mega Boys Block A' },
+      { key: 'girls', block: 'Kaveri Girls Block A' }
+    ];
+
+    for (const h of hostels) {
+      for (const f of floors) {
+        for (let r = f.range[0]; r <= f.range[1]; r++) {
+          await Room.findOneAndUpdate(
+            { room_no: r, hostel: h.key },
+            {
+              room_no: r,
+              hostel: h.key,
+              floor: f.floor,
+              block: h.block,
+              capacity: 1,
+              occupiedBeds: 0,
+              status: 'available',
+              roomCharges: 4500,
+              amenities: ['Bed', 'Study Table', 'Cupboard', 'Ceiling Fan', 'LAN Port']
+            },
+            { upsert: true, new: true }
+          );
+        }
+      }
+    }
+    console.log('✅ 120 rooms initialized (60 Boys + 60 Girls).');
+
+    // 2. Seed / Update Admins
+    // Superadmin
+    const superAdminEmail = 'admin@hostel.edu';
+    let superAdmin = await Admin.findOne({ email: superAdminEmail });
+    const superPass = await bcrypt.hash('AdminPassword123', 10);
+    if (!superAdmin) {
+      await Admin.create({
         name: 'Chief Warden Office',
-        email: adminEmail,
-        password: hashedAdminPassword,
-        role: 'superadmin'
+        email: superAdminEmail,
+        password: superPass,
+        role: 'superadmin',
+        assignedHostel: 'all'
       });
-      console.log('✅ Default Super Admin created: admin@hostel.edu / AdminPassword123');
+      console.log('✅ Super Admin created: admin@hostel.edu / AdminPassword123 (All Hostels)');
     } else {
-      console.log('ℹ️ Admin already exists: admin@hostel.edu');
+      superAdmin.assignedHostel = 'all';
+      superAdmin.role = 'superadmin';
+      await superAdmin.save();
+      console.log('ℹ️ Super Admin updated: admin@hostel.edu (All Hostels)');
     }
 
-    // 3. Seed Demo Student
-    const studentEmail = 'rahul.mca@university.edu';
-    let student = await User.findOne({ email: studentEmail });
-    if (!student) {
-      const hashedStudentPassword = await bcrypt.hash('Password123', 10);
-      student = await User.create({
+    // Boys Warden
+    const boysWardenEmail = 'boyswarden@hostel.edu';
+    let boysWarden = await Admin.findOne({ email: boysWardenEmail });
+    const wardenPass = await bcrypt.hash('WardenPassword123', 10);
+    if (!boysWarden) {
+      await Admin.create({
+        name: 'Dr. Ramesh Kumar (Boys Warden)',
+        email: boysWardenEmail,
+        password: wardenPass,
+        role: 'warden',
+        assignedHostel: 'boys'
+      });
+      console.log('✅ Boys Warden created: boyswarden@hostel.edu / WardenPassword123');
+    } else {
+      boysWarden.assignedHostel = 'boys';
+      await boysWarden.save();
+      console.log('ℹ️ Boys Warden updated: boyswarden@hostel.edu');
+    }
+
+    // Girls Warden
+    const girlsWardenEmail = 'girlswarden@hostel.edu';
+    let girlsWarden = await Admin.findOne({ email: girlsWardenEmail });
+    if (!girlsWarden) {
+      await Admin.create({
+        name: 'Dr. Sunita Verma (Girls Warden)',
+        email: girlsWardenEmail,
+        password: wardenPass,
+        role: 'warden',
+        assignedHostel: 'girls'
+      });
+      console.log('✅ Girls Warden created: girlswarden@hostel.edu / WardenPassword123');
+    } else {
+      girlsWarden.assignedHostel = 'girls';
+      await girlsWarden.save();
+      console.log('ℹ️ Girls Warden updated: girlswarden@hostel.edu');
+    }
+
+    // 3. Migrate and Seed Demo Students
+    // Migrate existing students without gender/hostel to 'Male' and 'boys'
+    await User.updateMany(
+      { $or: [{ gender: { $exists: false } }, { gender: '' }, { gender: null }] },
+      { $set: { gender: 'Male', hostel: 'boys' } }
+    );
+    await User.updateMany(
+      { $or: [{ hostel: { $exists: false } }, { hostel: '' }, { hostel: null }] },
+      { $set: { hostel: 'boys' } }
+    );
+
+    // Demo Male Student
+    const maleEmail = 'rahul.mca@university.edu';
+    let maleStudent = await User.findOne({ email: maleEmail });
+    const studentPass = await bcrypt.hash('Password123', 10);
+    if (!maleStudent) {
+      maleStudent = await User.create({
         name: 'Rahul Sharma',
-        email: studentEmail,
-        password: hashedStudentPassword,
+        email: maleEmail,
+        password: studentPass,
         mobile: '9876543210',
         studentId: 'MCA2024-042',
         gender: 'Male',
-        course: 'MCA (Master of Computer Applications)',
+        hostel: 'boys',
+        course: 'MCA',
         department: 'Computer Applications',
         academicYear: '2nd Year',
         guardianName: 'Rajesh Sharma',
         guardianPhone: '9876500000',
         relationship: 'Father',
-        room_no: 101, // Room 101 on 1st Floor
+        room_no: 101,
         status: 'approved'
       });
-      console.log('✅ Demo Student created: rahul.mca@university.edu / Password123 (Room 101)');
+      console.log('✅ Demo Male Student created: rahul.mca@university.edu / Password123 (Boys Hostel - Room 101)');
     } else {
-      console.log('ℹ️ Demo student already exists: rahul.mca@university.edu');
+      maleStudent.gender = 'Male';
+      maleStudent.hostel = 'boys';
+      maleStudent.room_no = 101;
+      await maleStudent.save();
     }
+    await Room.findOneAndUpdate({ room_no: 101, hostel: 'boys' }, { occupiedBeds: 1, status: 'occupied' });
 
-    // Mark Room 101 as occupied in Room model
-    await Room.findOneAndUpdate({ room_no: 101 }, { occupiedBeds: 1, status: 'occupied' });
+    // Demo Female Student
+    const femaleEmail = 'priya.mca@university.edu';
+    let femaleStudent = await User.findOne({ email: femaleEmail });
+    if (!femaleStudent) {
+      femaleStudent = await User.create({
+        name: 'Priya Patel',
+        email: femaleEmail,
+        password: studentPass,
+        mobile: '9876543211',
+        studentId: 'MCA2024-043',
+        gender: 'Female',
+        hostel: 'girls',
+        course: 'MCA',
+        department: 'Computer Applications',
+        academicYear: '2nd Year',
+        guardianName: 'Sanjay Patel',
+        guardianPhone: '9876500001',
+        relationship: 'Father',
+        room_no: 101,
+        status: 'approved'
+      });
+      console.log('✅ Demo Female Student created: priya.mca@university.edu / Password123 (Girls Hostel - Room 101)');
+    } else {
+      femaleStudent.gender = 'Female';
+      femaleStudent.hostel = 'girls';
+      femaleStudent.room_no = 101;
+      await femaleStudent.save();
+    }
+    await Room.findOneAndUpdate({ room_no: 101, hostel: 'girls' }, { occupiedBeds: 1, status: 'occupied' });
 
-    // 4. Seed Demo Mess Bill
-    const existingBill = await MessBill.findOne({ user_id: student._id });
-    if (!existingBill) {
-      await MessBill.create({
-        user_id: student._id,
-        studentName: student.name,
-        room_no: student.room_no,
+    // 4. Seed / Update Demo Records for Both Students
+    // Mess bills
+    await MessBill.findOneAndUpdate(
+      { user_id: maleStudent._id },
+      {
+        user_id: maleStudent._id,
+        studentName: maleStudent.name,
+        room_no: maleStudent.room_no,
+        hostel: 'boys',
         month: new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' }),
         totalAmount: 6500,
         usedAmount: 4200,
         balance: 2300,
-        status: 'Paid',
-        paymentHistory: [
-          {
-            amount: 6500,
-            date: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000),
-            receiptNo: 'REC-MCA101',
-            method: 'Online Net Banking'
-          }
-        ]
-      });
-      console.log('✅ Demo Mess Bill seeded: Total ₹6500, Balance ₹2300');
-    }
+        status: 'Paid'
+      },
+      { upsert: true }
+    );
 
-    // 5. Seed Sample Attendance Record
-    const existingAtt = await Attendance.findOne({ user_id: student._id });
-    if (!existingAtt) {
-      const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      await Attendance.create({
-        user_id: student._id,
-        name: student.name,
-        room_no: student.room_no,
+    await MessBill.findOneAndUpdate(
+      { user_id: femaleStudent._id },
+      {
+        user_id: femaleStudent._id,
+        studentName: femaleStudent.name,
+        room_no: femaleStudent.room_no,
+        hostel: 'girls',
+        month: new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' }),
+        totalAmount: 6500,
+        usedAmount: 3900,
+        balance: 2600,
+        status: 'Paid'
+      },
+      { upsert: true }
+    );
+
+    // Complaints
+    await Complain.findOneAndUpdate(
+      { user_id: maleStudent._id },
+      {
+        user_id: maleStudent._id,
+        name: maleStudent.name,
+        room_no: maleStudent.room_no,
+        hostel: 'boys',
+        catagory: 'Electricity',
+        description: 'Boys Hostel Room 101 study table tube light is flickering.',
+        status: 'Pending',
+        date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
+      },
+      { upsert: true }
+    );
+
+    await Complain.findOneAndUpdate(
+      { user_id: femaleStudent._id },
+      {
+        user_id: femaleStudent._id,
+        name: femaleStudent.name,
+        room_no: femaleStudent.room_no,
+        hostel: 'girls',
+        catagory: 'Wifi',
+        description: 'Girls Hostel 1st floor corridor WiFi access point needs a reboot.',
+        status: 'Pending',
+        date: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000)
+      },
+      { upsert: true }
+    );
+
+    // Attendance
+    await Attendance.findOneAndUpdate(
+      { user_id: maleStudent._id },
+      {
+        user_id: maleStudent._id,
+        name: maleStudent.name,
+        room_no: maleStudent.room_no,
+        hostel: 'boys',
         latitude: 31.398038,
         longitude: 75.531505,
         location_verified: true,
         face_verified: true,
         status: 'Present',
-        date: yesterday
-      });
-      console.log('✅ Sample Attendance record seeded.');
-    }
+        date: new Date()
+      },
+      { upsert: true }
+    );
 
-    // 6. Seed Sample Complaint
-    const existingComplain = await Complain.findOne({ user_id: student._id });
-    if (!existingComplain) {
-      await Complain.create({
-        user_id: student._id,
-        name: student.name,
-        room_no: student.room_no,
-        catagory: 'Electricity',
-        description: 'Room 101 study table tube light is flickering and needs replacement.',
-        status: 'Pending',
-        date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
-      });
-      console.log('✅ Sample Complaint seeded.');
-    }
+    await Attendance.findOneAndUpdate(
+      { user_id: femaleStudent._id },
+      {
+        user_id: femaleStudent._id,
+        name: femaleStudent.name,
+        room_no: femaleStudent.room_no,
+        hostel: 'girls',
+        latitude: 31.398038,
+        longitude: 75.531505,
+        location_verified: true,
+        face_verified: true,
+        status: 'Present',
+        date: new Date()
+      },
+      { upsert: true }
+    );
 
-    console.log('\n🎉 Database seeding completed successfully!\n');
+    // Gate Passes
+    await GatePass.findOneAndUpdate(
+      { user_id: maleStudent._id },
+      {
+        user_id: maleStudent._id,
+        name: maleStudent.name,
+        room_no: maleStudent.room_no,
+        hostel: 'boys',
+        Subject: 'Library MCA project reference research',
+        token_no: 'DEMO-BOYS-PASS-101',
+        g1: new Date().toLocaleDateString('en-IN'),
+        g2: '17:00',
+        pass_status: 'issued',
+        date: new Date()
+      },
+      { upsert: true }
+    );
+
+    await GatePass.findOneAndUpdate(
+      { user_id: femaleStudent._id },
+      {
+        user_id: femaleStudent._id,
+        name: femaleStudent.name,
+        room_no: femaleStudent.room_no,
+        hostel: 'girls',
+        Subject: 'Campus tech fest committee meeting',
+        token_no: 'DEMO-GIRLS-PASS-101',
+        g1: new Date().toLocaleDateString('en-IN'),
+        g2: '17:30',
+        pass_status: 'issued',
+        date: new Date()
+      },
+      { upsert: true }
+    );
+
+    console.log('\n🎉 Database seeding and migration completed successfully!\n');
     process.exit(0);
 
   } catch (err) {

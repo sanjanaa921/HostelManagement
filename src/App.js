@@ -17,6 +17,8 @@ import { Adminhome } from './components/adminhome';
 import { Adminattendance } from './components/adminattendance';
 import { Admincomplains } from './components/admincomplains';
 import { Adminpasses } from './components/adminpasses';
+import { Adminfeedback } from './components/adminfeedback';
+import { Adminmess } from './components/adminmess';
 import { Adminsidebar } from './components/adminsidebar';
 import { Temp } from './components/temp';
 import { Complains } from './components/complains';
@@ -52,6 +54,8 @@ function App() {
                   <Route exact path="/adminattendance" element={<Adminattendance />} />
                   <Route exact path="/admincomplains" element={<Admincomplains />} />
                   <Route exact path="/adminpasses" element={<Adminpasses />} />
+                  <Route exact path="/adminfeedback" element={<Adminfeedback />} />
+                  <Route exact path="/adminmess" element={<Adminmess />} />
                 </Routes>
               </div>
 

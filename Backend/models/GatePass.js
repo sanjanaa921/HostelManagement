@@ -15,6 +15,12 @@ const GatePassSchema = new Schema({
     type: Number,
     required: true
   },
+  hostel: {
+    type: String,
+    enum: ['boys', 'girls'],
+    required: true,
+    default: 'boys'
+  },
   Subject: {
     type: String,
     required: true,

@@ -11,9 +11,23 @@ const ComplainSchema = new Schema({
     type: String,
     required: true
   },
+  studentId: {
+    type: String,
+    default: ''
+  },
+  title: {
+    type: String,
+    default: ''
+  },
   room_no: {
     type: Number,
     required: true
+  },
+  hostel: {
+    type: String,
+    enum: ['boys', 'girls'],
+    required: true,
+    default: 'boys'
   },
   catagory: {   // Note: keeping original typo from frontend ("catagory" not "category")
     type: String,

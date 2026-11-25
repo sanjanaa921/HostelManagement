@@ -28,6 +28,7 @@ export const Home = () => {
 
   const [bookedRooms, setBookedRooms] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [studentHostel, setStudentHostel] = useState(localStorage.getItem('user_hostel') || 'boys');
   const [selectedFloor, setSelectedFloor] = useState('ground');
   const [selectedRoom, setSelectedRoom] = useState(null);
   const [bookingLoading, setBookingLoading] = useState(false);
@@ -64,10 +65,17 @@ export const Home = () => {
       setLoading(false);
 
       if (json.response) {
+        const gender = json.user.gender || 'Male';
+        const hostel = json.user.hostel || (gender === 'Female' ? 'girls' : 'boys');
+        setStudentHostel(hostel);
+        localStorage.setItem('user_gender', gender);
+        localStorage.setItem('user_hostel', hostel);
         dispatch({ type: 'UPDATE_NAME', payload: json.user.name });
         dispatch({ type: 'UPDATE_EMAIL', payload: json.user.email });
         dispatch({ type: 'UPDATE_MOBILE', payload: json.user.mobile });
         dispatch({ type: 'UPDATE_room', payload: json.room_no || '0' });
+        dispatch({ type: 'UPDATE_GENDER', payload: gender });
+        dispatch({ type: 'UPDATE_HOSTEL', payload: hostel });
 
         if (json.room_no) {
           localStorage.setItem('room_no', json.room_no);
@@ -140,7 +148,7 @@ export const Home = () => {
           'Content-Type': 'application/json',
           'auth-token': localStorage.getItem('token')
         },
-        body: JSON.stringify({ room: parseInt(selectedRoom) })
+        body: JSON.stringify({ room: parseInt(selectedRoom), hostel: studentHostel })
       });
 
       const json = await response.json();
@@ -200,15 +208,17 @@ export const Home = () => {
           <div className="space-y-2 max-w-2xl">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-blue-100 text-xs font-semibold border border-white/15">
               <Sparkles className="w-3.5 h-3.5 text-blue-200" />
-              <span>Campus Hostel Portal &bull; MCA University Project</span>
+              <span>
+                {studentHostel === 'girls' ? '👩 Kaveri Girls Hostel (Block A)' : '👨 Mega Boys Hostel (Block A)'} &bull; Campus Portal
+              </span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
               Welcome back, {state.user_name || 'Student'}!
             </h1>
             <p className="text-blue-100/90 text-sm leading-relaxed">
               {hasBookedRoom 
-                ? `You are checked into Room ${state.user_room}. All gate passes, mess balances, and attendance are synced.`
-                : 'Welcome to your accommodation dashboard. Please select and allocate your room below to unlock all hostel services.'}
+                ? `You are checked into Room ${state.user_room} in ${studentHostel === 'girls' ? 'Kaveri Girls Block A' : 'Mega Boys Block A'}. All gate passes, mess balances, and attendance are synced.`
+                : `Welcome to your ${studentHostel === 'girls' ? 'Girls' : 'Boys'} Hostel dashboard. Please select and allocate your room below to unlock all hostel services.`}
             </p>
           </div>
 
@@ -285,10 +295,12 @@ export const Home = () => {
               <div>
                 <div className="flex items-center gap-2">
                   <Badge variant="warning" dot>Required Action</Badge>
-                  <CardTitle>Select Your Hostel Room</CardTitle>
+                  <CardTitle>
+                    Select Your {studentHostel === 'girls' ? 'Girls Hostel' : 'Boys Hostel'} Room
+                  </CardTitle>
                 </div>
                 <CardDescription>
-                  Choose an available room from the interactive floor map below. Occupied rooms are marked in gray.
+                  Choose an available room in {studentHostel === 'girls' ? 'Kaveri Girls Block A' : 'Mega Boys Block A'}. Male and Female hostel rooms are strictly segregated.
                 </CardDescription>
               </div>
 
@@ -546,26 +558,48 @@ export const Home = () => {
                     <Building2 className="w-3.5 h-3.5" />
                     Hostel Block
                   </span>
-                  <span className="font-medium text-slate-800">Mega Boys Block A</span>
+                  <span className="font-medium text-slate-800">
+                    {studentHostel === 'girls' ? 'Kaveri Girls Block A' : 'Mega Boys Block A'}
+                  </span>
                 </div>
               </div>
 
-              {/* Mess Account Mini Summary */}
-              <div className="mt-4 pt-4 border-t border-slate-100 bg-slate-50 p-3.5 rounded-xl">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-semibold text-slate-600">Monthly Mess Balance</span>
-                  <span className="text-sm font-bold text-emerald-600">₹{messInfo.balance}</span>
+              {/* Mess Account Summary & Bill Status */}
+              <div className="mt-4 pt-4 border-t border-slate-100 bg-slate-50 p-3.5 rounded-xl space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-slate-800 block">Mess Account ({messInfo.month || 'Current Month'})</span>
+                    <span className="text-[11px] text-slate-500">Remaining Balance</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-sm font-bold text-emerald-600 block">₹{messInfo.balance}</span>
+                    <Badge variant={messInfo.status === 'Paid' ? 'success' : (messInfo.status === 'Overdue' ? 'danger' : 'warning')} size="sm">
+                      {messInfo.status || 'Paid'}
+                    </Badge>
+                  </div>
                 </div>
+
                 <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
                   <div
                     className="bg-blue-600 h-full rounded-full transition-all duration-500"
-                    style={{ width: `${(parseInt(messInfo.used) / parseInt(messInfo.total)) * 100}%` }}
+                    style={{ width: `${Math.min(100, (parseInt(messInfo.used || 0) / Math.max(1, parseInt(messInfo.total || 6500))) * 100)}%` }}
                   />
                 </div>
-                <div className="flex justify-between text-[10px] text-slate-400 mt-1">
-                  <span>Used: ₹{messInfo.used}</span>
-                  <span>Total: ₹{messInfo.total}</span>
+
+                <div className="flex justify-between text-[11px] text-slate-500">
+                  <span>Used: ₹{messInfo.used || 0}</span>
+                  <span>Total: ₹{messInfo.total || 6500}</span>
                 </div>
+
+                {Array.isArray(messInfo.paymentHistory) && messInfo.paymentHistory.length > 0 && (
+                  <div className="pt-2 border-t border-slate-200/60 text-[11px] text-slate-600 space-y-1">
+                    <span className="font-bold text-slate-700 block text-[10px] uppercase tracking-wider">Latest Payment:</span>
+                    <div className="flex justify-between items-center bg-white p-2 rounded-lg border border-slate-200/60">
+                      <span>{messInfo.paymentHistory[messInfo.paymentHistory.length - 1].receiptNo || 'Receipt'}</span>
+                      <span className="font-semibold text-emerald-600">₹{messInfo.paymentHistory[messInfo.paymentHistory.length - 1].amount}</span>
+                    </div>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>

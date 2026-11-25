@@ -10,7 +10,9 @@ import {
   RefreshCw, 
   Navigation, 
   ShieldCheck, 
-  Clock
+  Clock,
+  Upload,
+  AlertTriangle
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from './ui/Card';
 import { Badge } from './ui/Badge';
@@ -27,8 +29,14 @@ export const Attendance = () => {
   const [submitting, setSubmitting] = useState(false);
   const [latitude, setLatitude] = useState(null);
   const [longitude, setLongitude] = useState(null);
-  const [gpsAccuracy, setGpsAccuracy] = useState(null);
-  const [gpsStatus, setGpsStatus] = useState("Click 'Acquire GPS Location' to capture real campus position.");
+  const [gpsStatus, setGpsStatus] = useState("Acquiring GPS coordinates from device...");
+  const [campusConfig, setCampusConfig] = useState({
+    name: 'Parul University Goa Campus',
+    radius: 1000,
+    lat: 15.1580,
+    lon: 74.0430
+  });
+  const [hasRoom, setHasRoom] = useState(true);
   const [attendanceHistory, setAttendanceHistory] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [alert, setAlert] = useState({ show: false, message: '', type: 'info' });
@@ -38,23 +46,86 @@ export const Attendance = () => {
   const fileInputRef = useRef(null);
 
   useEffect(() => {
-    if (localStorage.getItem('token')) {
-      if (localStorage.getItem('room_no')) {
-        dothis();
-        getAttendanceHistory();
-        acquireLocation();
-      } else {
-        navigate("/home");
+    const initializeAttendance = async () => {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        navigate("/signin");
+        return;
       }
-    } else {
-      navigate("/signin");
-    }
+
+      dothis();
+
+      // Check if user has room allocated in database
+      let room = localStorage.getItem('room_no');
+      const backendUrl = (state.backend && state.port) ? `http://${state.backend}:${state.port}` : 'http://localhost:5000';
+
+      try {
+        const userRes = await fetch(`${backendUrl}/api/auth/getuser`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'auth-token': token
+          }
+        });
+        const userData = await userRes.json();
+        if (userData && userData.room_no) {
+          localStorage.setItem('room_no', userData.room_no);
+          room = userData.room_no;
+          setHasRoom(true);
+        } else if (!room) {
+          setHasRoom(false);
+          setAlert({
+            show: true,
+            message: 'You have not booked a hostel room yet. Please select and allocate a room from the Dashboard before logging daily roll call.',
+            type: 'warning'
+          });
+        }
+      } catch (err) {
+        console.error("Error checking user profile:", err);
+      }
+
+      fetchCampusConfig();
+      getAttendanceHistory();
+      acquireLocation();
+    };
+
+    initializeAttendance();
+
+    return () => {
+      stopCameraTracks();
+    };
   }, [navigate]);
 
   function dothis() {
     dispatch({ type: 'UPDATE_VALUE', payload: true });
     dispatch({ type: 'UPDATE_AVALUE', payload: false });
   }
+
+  const stopCameraTracks = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      videoRef.current.srcObject.getTracks().forEach(track => track.stop());
+      videoRef.current.srcObject = null;
+    }
+  };
+
+  // Fetch campus geofencing config
+  const fetchCampusConfig = async () => {
+    try {
+      const backendUrl = (state.backend && state.port) ? `http://${state.backend}:${state.port}` : 'http://localhost:5000';
+      const res = await fetch(`${backendUrl}/api/a/config`);
+      const data = await res.json();
+      if (data.response) {
+        setCampusConfig({
+          name: data.campusName || 'Parul University Goa Campus',
+          radius: data.campusRadiusMeters || 1000,
+          lat: data.campusLat,
+          lon: data.campusLon
+        });
+      }
+    } catch (err) {
+      console.error("Error fetching campus geofence config:", err);
+    }
+  };
 
   // Acquire GPS Location from real device sensor
   const acquireLocation = () => {
@@ -64,16 +135,15 @@ export const Attendance = () => {
         (position) => {
           setLatitude(position.coords.latitude);
           setLongitude(position.coords.longitude);
-          setGpsAccuracy(position.coords.accuracy);
           setGpsStatus(`GPS Verified: ${position.coords.latitude.toFixed(5)}, ${position.coords.longitude.toFixed(5)} (±${Math.round(position.coords.accuracy)}m)`);
         },
         (error) => {
           setLatitude(null);
           setLongitude(null);
           if (error.code === 1) {
-            setGpsStatus("Location permission denied. Please grant browser location access.");
+            setGpsStatus("Location permission denied. Please enable browser location permissions for campus geofence validation.");
           } else {
-            setGpsStatus(`Location unavailable (${error.message}). Real device GPS is required.`);
+            setGpsStatus(`Location unavailable (${error.message}). Real device GPS will be checked on submission.`);
           }
         },
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
@@ -96,43 +166,44 @@ export const Attendance = () => {
         setCameraActive(true);
       }
     } catch (err) {
-      setAlert({ show: true, message: 'Could not access camera: ' + err.message, type: 'error' });
+      setAlert({ 
+        show: true, 
+        message: 'Could not access device camera: ' + err.message + '. You may use the "Upload Selfie" fallback button below.', 
+        type: 'warning' 
+      });
     }
   };
 
-  // Capture Photo & Mark Attendance
-  const captureAndMarkAttendance = async () => {
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas) return;
-
-    canvas.width = video.videoWidth || 400;
-    canvas.height = video.videoHeight || 400;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const dataUrl = canvas.toDataURL('image/jpeg');
-    setCapturedImage(dataUrl);
-
-    // Stop camera tracks
-    if (video.srcObject) {
-      video.srcObject.getTracks().forEach(track => track.stop());
-      video.srcObject = null;
+  // Fallback Selfie File Upload handler
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        stopCameraTracks();
+        setCameraActive(false);
+        setCapturedImage(event.target.result);
+      };
+      reader.readAsDataURL(file);
     }
-    setCameraActive(false);
+  };
 
-    // Prepare FormData
+  // Submit attendance with image file
+  const submitAttendancePayload = async (fileObj) => {
     setSubmitting(true);
     setAlert({ show: false, message: '', type: 'info' });
 
     try {
-      const res = await fetch(dataUrl);
-      const blob = await res.blob();
-      const file = new File([blob], 'attendance.jpg', { type: 'image/jpeg' });
-
       const formData = new FormData();
-      formData.append('file', file);
-      formData.append('latitude', latitude);
-      formData.append('longitude', longitude);
+      formData.append('file', fileObj);
+
+      // Only append numeric coordinates if valid
+      if (latitude !== null && latitude !== undefined && !isNaN(Number(latitude))) {
+        formData.append('latitude', String(latitude));
+      }
+      if (longitude !== null && longitude !== undefined && !isNaN(Number(longitude))) {
+        formData.append('longitude', String(longitude));
+      }
 
       const backendUrl = (state.backend && state.port) ? `http://${state.backend}:${state.port}` : 'http://localhost:5000';
       const response = await axios.post(`${backendUrl}/api/a/attend`, formData, {
@@ -145,7 +216,7 @@ export const Attendance = () => {
       if (response.data.response) {
         setAlert({
           show: true,
-          message: response.data.message || 'Success! Your daily attendance has been verified & recorded.',
+          message: response.data.message || 'Success! Your daily attendance has been recorded.',
           type: 'success'
         });
         getAttendanceHistory();
@@ -158,7 +229,7 @@ export const Attendance = () => {
       }
     } catch (err) {
       setSubmitting(false);
-      const errorMsg = err.response?.data?.message || (err.message === 'Network Error' ? 'Network Error: Backend server is unreachable on port 5000. Please start the backend server.' : err.message);
+      const errorMsg = err.response?.data?.message || (err.message === 'Network Error' ? 'Backend server is unreachable on port 5000. Please ensure backend is running.' : err.message);
       setAlert({
         show: true,
         message: 'Error recording attendance: ' + errorMsg,
@@ -167,11 +238,40 @@ export const Attendance = () => {
     }
   };
 
+  // Capture Photo & Mark Attendance
+  const captureAndMarkAttendance = async () => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+
+    if (cameraActive && video && canvas) {
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+      setCapturedImage(dataUrl);
+
+      stopCameraTracks();
+      setCameraActive(false);
+
+      const res = await fetch(dataUrl);
+      const blob = await res.blob();
+      const file = new File([blob], 'attendance.jpg', { type: 'image/jpeg' });
+      await submitAttendancePayload(file);
+    } else if (capturedImage) {
+      const res = await fetch(capturedImage);
+      const blob = await res.blob();
+      const file = new File([blob], 'attendance.jpg', { type: 'image/jpeg' });
+      await submitAttendancePayload(file);
+    }
+  };
+
   // Fetch past attendance records
   const getAttendanceHistory = async () => {
     setRefreshing(true);
     try {
-      const response = await fetch(`http://${state.backend}:${state.port}/api/a/attend`, {
+      const backendUrl = (state.backend && state.port) ? `http://${state.backend}:${state.port}` : 'http://localhost:5000';
+      const response = await fetch(`${backendUrl}/api/a/attend`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -226,6 +326,23 @@ export const Attendance = () => {
         </Alert>
       )}
 
+      {!hasRoom && (
+        <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0" />
+            <p className="text-xs sm:text-sm font-medium">
+              You must allocate a room in your hostel before your attendance can be confirmed.
+            </p>
+          </div>
+          <button
+            onClick={() => navigate('/home')}
+            className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold whitespace-nowrap cursor-pointer transition-colors"
+          >
+            Book Room
+          </button>
+        </div>
+      )}
+
       {/* Geolocation Status Pill */}
       <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
@@ -234,8 +351,8 @@ export const Attendance = () => {
           </div>
           <div>
             <p className="text-xs font-bold text-slate-900 flex items-center gap-2">
-              <span>Campus Geofence Boundary Verification</span>
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>{campusConfig.name} Geofence (±{campusConfig.radius}m)</span>
+              <span className={`w-2 h-2 rounded-full ${latitude ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'}`} />
             </p>
             <p className="text-xs text-slate-500 mt-0.5">{gpsStatus}</p>
           </div>
@@ -263,12 +380,12 @@ export const Attendance = () => {
             <CardHeader>
               <div className="flex items-center justify-between w-full">
                 <CardTitle>Camera Attendance Verification</CardTitle>
-                <Badge variant={cameraActive ? 'success' : 'default'} dot>
-                  {cameraActive ? 'Live Camera Feed' : 'Camera Idle'}
+                <Badge variant={cameraActive ? 'success' : (capturedImage ? 'purple' : 'default')} dot>
+                  {cameraActive ? 'Live Camera Feed' : (capturedImage ? 'Photo Ready' : 'Camera Idle')}
                 </Badge>
               </div>
               <CardDescription>
-                Position your face inside the verified campus perimeter and snap a live verification selfie.
+                Position your face inside the campus perimeter and capture a live roll call selfie.
               </CardDescription>
             </CardHeader>
 
@@ -303,29 +420,64 @@ export const Attendance = () => {
                     <Camera className="w-12 h-12 mx-auto text-slate-600 mb-2" />
                     <p className="text-sm font-semibold text-slate-300">Face Camera Not Started</p>
                     <p className="text-xs text-slate-500 max-w-xs mx-auto">
-                      Click "Start Camera" below to initiate the camera session and log your attendance.
+                      Click "Start Camera" below to initiate video capture, or use "Upload Selfie" if your device camera is unavailable.
                     </p>
                   </div>
                 )}
               </div>
 
               {/* Action Buttons */}
-              <div className="flex items-center gap-3 pt-2">
+              <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+                <input
+                  type="file"
+                  accept="image/*"
+                  ref={fileInputRef}
+                  className="hidden"
+                  onChange={handleFileChange}
+                />
+
                 {!cameraActive ? (
-                  <button
-                    onClick={startCamera}
-                    type="button"
-                    className="flex-1 py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold text-sm transition-all flex items-center justify-center gap-2 shadow-md shadow-blue-500/20 cursor-pointer"
-                  >
-                    <Camera className="w-4 h-4" />
-                    <span>{capturedImage ? 'Retake Photo' : 'Start Camera'}</span>
-                  </button>
+                  <>
+                    <button
+                      onClick={startCamera}
+                      type="button"
+                      className="w-full sm:flex-1 py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold text-sm transition-all flex items-center justify-center gap-2 shadow-md shadow-blue-500/20 cursor-pointer"
+                    >
+                      <Camera className="w-4 h-4" />
+                      <span>{capturedImage ? 'Retake Live Photo' : 'Start Camera'}</span>
+                    </button>
+                    <button
+                      onClick={() => fileInputRef.current && fileInputRef.current.click()}
+                      type="button"
+                      className="w-full sm:w-auto py-3 px-4 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-sm transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                    >
+                      <Upload className="w-4 h-4 text-blue-600" />
+                      <span>Upload Selfie</span>
+                    </button>
+                    {capturedImage && (
+                      <button
+                        onClick={captureAndMarkAttendance}
+                        disabled={submitting}
+                        type="button"
+                        className="w-full sm:flex-1 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-semibold text-sm transition-all flex items-center justify-center gap-2 shadow-md shadow-emerald-500/20 disabled:opacity-50 cursor-pointer"
+                      >
+                        {submitting ? (
+                          <span>Verifying & Recording...</span>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="w-4 h-4" />
+                            <span>Submit Attendance</span>
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </>
                 ) : (
                   <button
                     onClick={captureAndMarkAttendance}
                     disabled={submitting}
                     type="button"
-                    className="flex-1 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-semibold text-sm transition-all flex items-center justify-center gap-2 shadow-md shadow-emerald-500/20 disabled:opacity-50 cursor-pointer"
+                    className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-semibold text-sm transition-all flex items-center justify-center gap-2 shadow-md shadow-emerald-500/20 disabled:opacity-50 cursor-pointer"
                   >
                     {submitting ? (
                       <span>Verifying & Recording...</span>
@@ -361,7 +513,7 @@ export const Attendance = () => {
                 <MapPin className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
                 <div>
                   <span className="font-bold text-slate-900">Perimeter Requirement: </span>
-                  <span>Student device must be within the defined campus coordinates boundary.</span>
+                  <span>Student device must be within {campusConfig.name} boundary (±{campusConfig.radius}m).</span>
                 </div>
               </div>
               <div className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-100">
@@ -397,9 +549,10 @@ export const Attendance = () => {
                   <tr>
                     <th className="py-3.5 px-4">Date</th>
                     <th className="py-3.5 px-4">Time</th>
-                    <th className="py-3.5 px-4">Student Name</th>
+                    <th className="py-3.5 px-4">Student</th>
                     <th className="py-3.5 px-4">Room No</th>
                     <th className="py-3.5 px-4">Location Check</th>
+                    <th className="py-3.5 px-4">Face Check</th>
                     <th className="py-3.5 px-4">Roll Call Status</th>
                   </tr>
                 </thead>
@@ -416,16 +569,26 @@ export const Attendance = () => {
                           {formatTime(rec.date)}
                         </td>
                         <td className="py-3.5 px-4 font-semibold text-slate-800">
-                          {rec.name || state.user_name}
+                          <div>{rec.name || state.user_name}</div>
+                          {rec.studentId && (
+                            <span className="text-[10px] text-slate-400 font-mono">ID: {rec.studentId}</span>
+                          )}
                         </td>
                         <td className="py-3.5 px-4 text-blue-600 font-bold">
                           Room {rec.room_no || state.user_room}
                         </td>
                         <td className="py-3.5 px-4">
-                          <span className="inline-flex items-center gap-1 text-xs text-slate-500 font-mono">
-                            <MapPin className="w-3.5 h-3.5 text-emerald-500" />
-                            <span>Campus Verified</span>
+                          <span className={`inline-flex items-center gap-1 text-xs font-mono ${
+                            rec.location_verified ? 'text-emerald-600' : 'text-slate-500'
+                          }`}>
+                            <MapPin className="w-3.5 h-3.5" />
+                            <span>{rec.location_verified ? 'Campus Verified' : 'GPS Offline'}</span>
                           </span>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <Badge variant={rec.face_verified ? 'success' : 'default'} size="sm">
+                            {rec.face_verified ? 'Face Matched' : 'Selfie Logged'}
+                          </Badge>
                         </td>
                         <td className="py-3.5 px-4">
                           <Badge variant={isPresent ? 'success' : 'danger'} size="sm" dot>
@@ -442,18 +605,15 @@ export const Attendance = () => {
             <EmptyState
               icon={CalendarCheck2}
               title="No Attendance Logs"
-              description="No attendance records have been logged yet. Start the camera above to mark your first roll call."
+              description="No attendance records have been logged yet. Start the camera above or upload a selfie to record your roll call."
             />
           )}
         </CardContent>
       </Card>
 
-      {/* Hidden elements for legacy script compatibility */}
+      {/* Hidden elements for canvas capture */}
       <div style={{ display: 'none' }}>
-        <input type="file" id="ifile" ref={fileInputRef} />
         <canvas id="canvas" ref={canvasRef} />
-        <video id="video" />
-        <div id="scanner"></div>
       </div>
     </div>
   );

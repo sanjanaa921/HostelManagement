@@ -20,7 +20,8 @@ router.post(
     body('name', 'Full name must be at least 3 characters').isLength({ min: 3 }).trim(),
     body('email', 'Please provide a valid email address').isEmail().normalizeEmail(),
     body('password', 'Password must be at least 5 characters').isLength({ min: 5 }),
-    body('mobile', 'Mobile number must be at least 10 digits').isLength({ min: 10 })
+    body('mobile', 'Mobile number must be at least 10 digits').isLength({ min: 10 }),
+    body('gender', 'Gender is required and must be either Male or Female').isIn(['Male', 'Female'])
   ],
   async (req, res) => {
     // Validate inputs
@@ -72,6 +73,9 @@ router.post(
       const salt = await bcrypt.genSalt(SALT_ROUNDS);
       const hashedPassword = await bcrypt.hash(password, salt);
 
+      // Automatic Hostel Assignment based strictly on verified gender
+      const assignedHostel = gender === 'Female' ? 'girls' : 'boys';
+
       // Create the new student
       const user = await User.create({
         name,
@@ -79,7 +83,8 @@ router.post(
         password: hashedPassword,
         mobile,
         studentId: studentId || '',
-        gender: gender || '',
+        gender,
+        hostel: assignedHostel,
         course: course || 'MCA',
         department: department || 'Computer Applications',
         academicYear: academicYear || '1st Year',
@@ -165,7 +170,9 @@ router.post(
       const payload = {
         user: {
           id: user.id,
-          email: user.email
+          email: user.email,
+          gender: user.gender,
+          hostel: user.hostel
         }
       };
 
@@ -174,7 +181,15 @@ router.post(
       return res.json({
         response: true,
         message: 'Login successful! Welcome back.',
-        jwtData
+        jwtData,
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          gender: user.gender,
+          hostel: user.hostel,
+          room_no: user.room_no
+        }
       });
 
     } catch (err) {
@@ -211,6 +226,7 @@ router.get('/getuser', fetchuser, async (req, res) => {
         mobile: user.mobile,
         studentId: user.studentId,
         gender: user.gender,
+        hostel: user.hostel,
         course: user.course,
         department: user.department,
         academicYear: user.academicYear,
@@ -221,7 +237,8 @@ router.get('/getuser', fetchuser, async (req, res) => {
         status: user.status,
         date: user.date
       },
-      room_no: user.room_no || null
+      room_no: user.room_no || null,
+      hostel: user.hostel || 'boys'
     });
 
   } catch (err) {
@@ -237,12 +254,13 @@ router.get('/getuser', fetchuser, async (req, res) => {
  * PUT /api/auth/profile
  * Update student profile permitted details
  * Protected: Student
+ * Note: Students CANNOT alter gender or hostel assignment.
+ * Only administrators can correct student gender.
  */
 router.put('/profile', fetchuser, async (req, res) => {
   const {
     name,
     mobile,
-    gender,
     course,
     department,
     academicYear,
@@ -255,13 +273,17 @@ router.put('/profile', fetchuser, async (req, res) => {
     const updateData = {};
     if (name) updateData.name = name.trim();
     if (mobile) updateData.mobile = mobile;
-    if (gender) updateData.gender = gender;
     if (course) updateData.course = course;
     if (department) updateData.department = department;
     if (academicYear) updateData.academicYear = academicYear;
     if (guardianName) updateData.guardianName = guardianName;
     if (guardianPhone) updateData.guardianPhone = guardianPhone;
     if (relationship) updateData.relationship = relationship;
+
+    // Explicitly reject any attempt by a student to change their gender or hostel
+    if (req.body.gender || req.body.hostel) {
+      // Intentionally stripped out: students cannot self-change gender or hostel assignment
+    }
 
     const user = await User.findByIdAndUpdate(req.user.id, updateData, { new: true }).select('-password');
 

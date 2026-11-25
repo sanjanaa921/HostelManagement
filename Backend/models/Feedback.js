@@ -11,6 +11,15 @@ const FeedbackSchema = new Schema({
     type: String,
     required: true
   },
+  studentId: {
+    type: String,
+    default: ''
+  },
+  hostel: {
+    type: String,
+    enum: ['boys', 'girls'],
+    default: 'boys'
+  },
   room_no: {
     type: Number,
     default: 0

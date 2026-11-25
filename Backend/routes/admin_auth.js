@@ -4,6 +4,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const Admin = require('../models/Admin');
+const fetchadmin = require('../middleware/fetchadmin');
 
 const JWT_ADMIN_SECRET = process.env.JWT_ADMIN_SECRET || 'hostel_admin_jwt_secret_dev_key_2024';
 const SALT_ROUNDS = 10;
@@ -11,7 +12,7 @@ const SALT_ROUNDS = 10;
 /**
  * POST /api/admin_auth/adminlogin
  * Admin / Warden / Gate Security / Mess Manager login
- * Public endpoint (but limited to pre-created admin accounts)
+ * Public endpoint (limited to pre-created admin accounts)
  */
 router.post(
   '/adminlogin',
@@ -47,11 +48,14 @@ router.post(
         });
       }
 
+      const assignedHostel = admin.assignedHostel || 'all';
+
       const payload = {
         admin: {
           id: admin.id,
           email: admin.email,
-          role: admin.role
+          role: admin.role,
+          assignedHostel
         }
       };
 
@@ -62,7 +66,8 @@ router.post(
         message: `Welcome, ${admin.name}! Signed in as ${admin.role}.`,
         jwtData,
         role: admin.role,
-        name: admin.name
+        name: admin.name,
+        assignedHostel
       });
 
     } catch (err) {
@@ -76,9 +81,35 @@ router.post(
 );
 
 /**
+ * GET /api/admin_auth/getadmin
+ * Fetch authenticated admin details
+ * Protected: Admin
+ */
+router.get('/getadmin', fetchadmin, async (req, res) => {
+  try {
+    const admin = await Admin.findById(req.admin.id).select('-password');
+    if (!admin) {
+      return res.status(404).json({ response: false, message: 'Admin account not found.' });
+    }
+    return res.json({
+      response: true,
+      admin: {
+        id: admin._id,
+        name: admin.name,
+        email: admin.email,
+        role: admin.role,
+        assignedHostel: admin.assignedHostel || 'all'
+      }
+    });
+  } catch (err) {
+    console.error('Error in getadmin:', err.message);
+    return res.status(500).json({ response: false, message: 'Internal server error.' });
+  }
+});
+
+/**
  * POST /api/admin_auth/createadmin
- * Create initial admin account (should be disabled in production after setup)
- * This endpoint is only available when ALLOW_ADMIN_CREATION=true in env
+ * Create admin account (when ALLOW_ADMIN_CREATION=true)
  */
 router.post('/createadmin', async (req, res) => {
   if (process.env.ALLOW_ADMIN_CREATION !== 'true') {
@@ -88,7 +119,7 @@ router.post('/createadmin', async (req, res) => {
     });
   }
 
-  const { name, email, password, role } = req.body;
+  const { name, email, password, role, assignedHostel } = req.body;
   if (!name || !email || !password) {
     return res.status(400).json({ response: false, message: 'Name, email and password are required.' });
   }
@@ -106,12 +137,14 @@ router.post('/createadmin', async (req, res) => {
       name,
       email,
       password: hashedPassword,
-      role: role || 'warden'
+      role: role || 'warden',
+      assignedHostel: assignedHostel || 'all'
     });
 
     return res.status(201).json({
       response: true,
-      message: `Admin account created successfully with role: ${admin.role}`
+      message: `Admin account created successfully with role: ${admin.role}`,
+      assignedHostel: admin.assignedHostel
     });
   } catch (err) {
     console.error('Error in createadmin:', err.message);

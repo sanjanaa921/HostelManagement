@@ -25,27 +25,30 @@ export const Adminattendance = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [hostelFilter, setHostelFilter] = useState("all");
   const [alert, setAlert] = useState({ show: false, message: '', type: 'info' });
 
   useEffect(() => {
     if (localStorage.getItem('admintoken')) {
       dothis();
-      fetchAllAttendance();
+      fetchAllAttendance(hostelFilter);
     } else {
       dothis();
       navigate("/adminsignin");
     }
-  }, [navigate]);
+  }, [navigate, hostelFilter]);
 
   function dothis() {
     dispatch({ type: 'UPDATE_VALUE', payload: false });
     dispatch({ type: 'UPDATE_AVALUE', payload: true });
   }
 
-  const fetchAllAttendance = async () => {
+  const fetchAllAttendance = async (hostel) => {
     setRefreshing(true);
     try {
-      const response = await fetch(`http://${state.backend}:${state.port}/api/ad/allattendance`, {
+      const backendUrl = (state.backend && state.port) ? `http://${state.backend}:${state.port}` : 'http://localhost:5000';
+      const hostelParam = hostel && hostel !== 'all' ? `?hostel=${hostel}` : '';
+      const response = await fetch(`${backendUrl}/api/ad/allattendance${hostelParam}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -84,6 +87,7 @@ export const Adminattendance = () => {
   const filteredRecords = records.filter(r => {
     const matchesSearch = (
       r.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      r.studentId?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       String(r.room_no).includes(searchQuery) ||
       r.status?.toLowerCase().includes(searchQuery.toLowerCase())
     );
@@ -102,7 +106,7 @@ export const Adminattendance = () => {
         badge={<Badge variant="purple">Warden Attendance Desk</Badge>}
         actions={
           <button
-            onClick={fetchAllAttendance}
+            onClick={() => fetchAllAttendance(hostelFilter)}
             disabled={refreshing}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 transition-colors cursor-pointer"
           >
@@ -151,7 +155,7 @@ export const Adminattendance = () => {
       {/* Attendance Register Table */}
       <Card>
         <CardHeader>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 w-full">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 w-full">
             <div>
               <CardTitle>Daily Roll Call Register</CardTitle>
               <CardDescription>
@@ -159,24 +163,57 @@ export const Adminattendance = () => {
               </CardDescription>
             </div>
 
-            {/* Search and Status Filters */}
+            {/* Hostel Filter Tabs, Search, and Status Filters */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              {/* Hostel Tabs */}
+              <div className="flex p-1 rounded-xl bg-slate-100 border border-slate-200/60">
+                <button
+                  type="button"
+                  onClick={() => setHostelFilter('all')}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                    hostelFilter === 'all' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  All Hostels
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHostelFilter('boys')}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                    hostelFilter === 'boys' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Boys Hostel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHostelFilter('girls')}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                    hostelFilter === 'girls' ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Girls Hostel
+                </button>
+              </div>
+
+              {/* Search input */}
               <div className="relative">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search student or room..."
-                  className="pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all outline-none w-full sm:w-60"
+                  placeholder="Search student, ID, room..."
+                  className="pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all outline-none w-full sm:w-52"
                 />
               </div>
 
+              {/* Status filter buttons */}
               <div className="flex p-1 rounded-xl bg-slate-100 border border-slate-200/60 self-start sm:self-auto">
                 <button
                   type="button"
                   onClick={() => setStatusFilter('all')}
-                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
                     statusFilter === 'all' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
@@ -185,7 +222,7 @@ export const Adminattendance = () => {
                 <button
                   type="button"
                   onClick={() => setStatusFilter('present')}
-                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
                     statusFilter === 'present' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
@@ -194,7 +231,7 @@ export const Adminattendance = () => {
                 <button
                   type="button"
                   onClick={() => setStatusFilter('absent')}
-                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
                     statusFilter === 'absent' ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
@@ -218,9 +255,10 @@ export const Adminattendance = () => {
                   <tr>
                     <th className="py-3.5 px-4">Date</th>
                     <th className="py-3.5 px-4">Time</th>
-                    <th className="py-3.5 px-4">Student Name</th>
+                    <th className="py-3.5 px-4">Student & Hostel</th>
                     <th className="py-3.5 px-4">Allotted Room</th>
                     <th className="py-3.5 px-4">Location Check</th>
+                    <th className="py-3.5 px-4">Face Check</th>
                     <th className="py-3.5 px-4 text-right">Status</th>
                   </tr>
                 </thead>
@@ -237,7 +275,17 @@ export const Adminattendance = () => {
                           {formatTime(r.date)}
                         </td>
                         <td className="py-3.5 px-4 font-bold text-slate-900">
-                          {r.name}
+                          <div>{r.name}</div>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
+                              r.hostel === 'girls' ? 'bg-rose-50 text-rose-600' : 'bg-blue-50 text-blue-600'
+                            }`}>
+                              {r.hostel === 'girls' ? 'Girls Hostel' : 'Boys Hostel'}
+                            </span>
+                            {r.studentId && (
+                              <span className="text-[10px] text-slate-400 font-mono">ID: {r.studentId}</span>
+                            )}
+                          </div>
                         </td>
                         <td className="py-3.5 px-4">
                           <span className="font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200/60">
@@ -245,10 +293,17 @@ export const Adminattendance = () => {
                           </span>
                         </td>
                         <td className="py-3.5 px-4">
-                          <span className="inline-flex items-center gap-1 text-xs text-slate-500 font-mono">
-                            <MapPin className="w-3.5 h-3.5 text-emerald-500" />
-                            <span>Campus Polygon OK</span>
+                          <span className={`inline-flex items-center gap-1 text-xs font-mono ${
+                            r.location_verified ? 'text-emerald-600' : 'text-slate-500'
+                          }`}>
+                            <MapPin className="w-3.5 h-3.5" />
+                            <span>{r.location_verified ? 'Campus Verified' : 'GPS Offline'}</span>
                           </span>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <Badge variant={r.face_verified ? 'success' : 'default'} size="sm">
+                            {r.face_verified ? 'Face Matched' : 'Selfie Logged'}
+                          </Badge>
                         </td>
                         <td className="py-3.5 px-4 text-right">
                           <Badge variant={isPresent ? 'success' : 'danger'} size="sm" dot>
@@ -265,7 +320,7 @@ export const Adminattendance = () => {
             <EmptyState
               icon={ClipboardCheck}
               title="No Attendance Logs Found"
-              description="No roll call logs match your current filter criteria."
+              description="No roll call logs match your current hostel and filter criteria."
             />
           )}
         </CardContent>

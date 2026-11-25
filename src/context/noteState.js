@@ -3,15 +3,16 @@ import noteContext from "./noteContext";
 
 const initialState = {
     value: true,
-    adminsidebar:true,
-    user_name:"User",
-    user_room:"0",
-    user_mobile:"9876543210",
-    user_email:"user@example.com",
-    user_photo_url:"vec2.jpg",
-    backend:"localhost",
-    port:"5000"
-    
+    adminsidebar: true,
+    user_name: "User",
+    user_room: "0",
+    user_gender: "Male",
+    user_hostel: "boys",
+    user_mobile: "9876543210",
+    user_email: "user@example.com",
+    user_photo_url: "vec2.jpg",
+    backend: "localhost",
+    port: "5000"
   };
   function reducer(state, action) {
     switch (action.type) {
@@ -29,6 +30,10 @@ const initialState = {
         return { ...state, user_room: action.payload };
       case 'UPDATE_photo_url':
         return { ...state, user_photo_url: action.payload };
+      case 'UPDATE_GENDER':
+        return { ...state, user_gender: action.payload };
+      case 'UPDATE_HOSTEL':
+        return { ...state, user_hostel: action.payload };
       
       default:
         return state;

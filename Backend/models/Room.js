@@ -4,8 +4,13 @@ const { Schema } = mongoose;
 const RoomSchema = new Schema({
   room_no: {
     type: Number,
+    required: true
+  },
+  hostel: {
+    type: String,
+    enum: ['boys', 'girls'],
     required: true,
-    unique: true
+    default: 'boys'
   },
   floor: {
     type: String,
@@ -35,6 +40,9 @@ const RoomSchema = new Schema({
   },
   amenities: [String]
 });
+
+// Compound unique index: room_no must be unique within its respective hostel
+RoomSchema.index({ room_no: 1, hostel: 1 }, { unique: true });
 
 const Room = mongoose.model('room', RoomSchema);
 module.exports = Room;

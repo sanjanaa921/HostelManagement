@@ -402,7 +402,12 @@ export const Adminpasses = () => {
                     return (
                       <tr key={pass._id} className="hover:bg-slate-50/60 transition-colors">
                         <td className="py-3.5 px-4 font-bold text-slate-900">
-                          {pass.name}
+                          <div>{pass.name}</div>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                            pass.hostel === 'girls' ? 'bg-rose-50 text-rose-600' : 'bg-blue-50 text-blue-600'
+                          }`}>
+                            {pass.hostel === 'girls' ? 'Girls Hostel' : 'Boys Hostel'}
+                          </span>
                         </td>
                         <td className="py-3.5 px-4 text-blue-600 font-semibold">
                           Room {pass.room_no}

@@ -12,6 +12,7 @@ export const Signup = () => {
   const [emailInput, setEmailInput] = useState("");
   const [mobileInput, setMobileInput] = useState("");
   const [studentId, setStudentId] = useState("");
+  const [genderInput, setGenderInput] = useState("Male");
   const [passwordInput, setPasswordInput] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -45,7 +46,8 @@ export const Signup = () => {
           email: emailInput,
           password: passwordInput,
           mobile: mobileInput,
-          studentId: studentId
+          studentId: studentId,
+          gender: genderInput
         })
       });
 
@@ -169,6 +171,47 @@ export const Signup = () => {
                   className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all outline-none"
                 />
               </div>
+            </div>
+
+            {/* Gender and Automatic Hostel Assignment */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                Gender <span className="text-red-500">*</span>
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setGenderInput("Male")}
+                  className={`py-2.5 px-4 rounded-xl text-sm font-semibold border transition-all text-center flex items-center justify-center gap-2 cursor-pointer ${
+                    genderInput === "Male"
+                      ? "bg-blue-50 border-blue-500 text-blue-700 shadow-sm ring-2 ring-blue-500/20"
+                      : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <span>👨 Male</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGenderInput("Female")}
+                  className={`py-2.5 px-4 rounded-xl text-sm font-semibold border transition-all text-center flex items-center justify-center gap-2 cursor-pointer ${
+                    genderInput === "Female"
+                      ? "bg-rose-50 border-rose-500 text-rose-700 shadow-sm ring-2 ring-rose-500/20"
+                      : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <span>👩 Female</span>
+                </button>
+              </div>
+              <p className="mt-1.5 text-xs text-slate-500 bg-slate-50 p-2 rounded-lg border border-slate-200/60">
+                🏢 Assigned Hostel:{' '}
+                <strong className={genderInput === 'Female' ? 'text-rose-600' : 'text-blue-600'}>
+                  {genderInput === 'Female' ? 'Girls Hostel (Kaveri Girls Block A)' : 'Boys Hostel (Mega Boys Block A)'}
+                </strong>
+                <br />
+                <span className="text-[11px] text-slate-400">
+                  Automatic assignment based on registered gender. Cannot be altered after account creation.
+                </span>
+              </p>
             </div>
 
             {/* Password */}

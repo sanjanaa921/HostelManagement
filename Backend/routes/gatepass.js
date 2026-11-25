@@ -128,6 +128,7 @@ router.post('/gatetoken', fetchuser, async (req, res) => {
       user_id: req.user.id,
       name: user.name,
       room_no: user.room_no,
+      hostel: user.hostel || 'boys',
       Subject: Subject.trim(),
       It: It || '',
       token_no,

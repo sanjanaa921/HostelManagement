@@ -11,7 +11,9 @@ import {
   LogOut, 
   Menu, 
   X,
-  ArrowLeftRight
+  ArrowLeftRight,
+  Receipt,
+  MessageSquare
 } from 'lucide-react';
 import { Logo } from './ui/Logo';
 
@@ -40,6 +42,8 @@ export const Adminsidebar = () => {
     { name: 'Gate Pass Scanner', path: '/adminpasses', icon: QrCode },
     { name: 'Attendance Register', path: '/adminattendance', icon: ClipboardCheck },
     { name: 'Complaints Resolution', path: '/admincomplains', icon: AlertCircle },
+    { name: 'Mess & Bill Desk', path: '/adminmess', icon: Receipt },
+    { name: 'Student Feedback', path: '/adminfeedback', icon: MessageSquare },
   ];
 
   const logout = async () => {

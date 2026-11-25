@@ -33,9 +33,11 @@ router.post(
         return res.status(404).json({ response: false, message: 'User not found.' });
       }
 
-      await Feedback.create({
+      const feedback = await Feedback.create({
         user_id: req.user.id,
         name: user.name,
+        studentId: user.studentId || '',
+        hostel: user.hostel || (user.gender === 'Female' ? 'girls' : 'boys'),
         room_no: user.room_no || 0,
         title: title.trim(),
         message,
@@ -44,7 +46,8 @@ router.post(
 
       return res.status(201).json({
         response: true,
-        message: 'Thank you! Your feedback has been shared with the hostel warden and mess management.'
+        message: 'Thank you! Your feedback has been shared with the hostel warden and mess management.',
+        feedback
       });
 
     } catch (err) {

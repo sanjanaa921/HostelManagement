@@ -5,6 +5,25 @@ const User = require('../models/User');
 const fetchuser = require('../middleware/fetchuser');
 const fetchadmin = require('../middleware/fetchadmin');
 
+function resolveHostelAccess(admin, requestedHostel) {
+  const isGlobalAdmin = admin && (admin.role === 'superadmin' || admin.role === 'admin' || !admin.assignedHostel || admin.assignedHostel === 'all');
+
+  if (!isGlobalAdmin) {
+    if (requestedHostel && requestedHostel !== 'all' && requestedHostel !== admin.assignedHostel) {
+      return {
+        forbidden: true,
+        error: `Access denied. You are only authorized to manage ${admin.assignedHostel === 'boys' ? 'Boys' : 'Girls'} Hostel records.`
+      };
+    }
+    return { hostel: admin.assignedHostel };
+  }
+
+  if (requestedHostel === 'boys' || requestedHostel === 'girls') {
+    return { hostel: requestedHostel };
+  }
+  return { hostel: null };
+}
+
 /**
  * GET /api/m/bill
  * Get the current student's mess bill and balance
@@ -25,7 +44,9 @@ router.get('/bill', fetchuser, async (req, res) => {
       bill = await MessBill.create({
         user_id: user._id,
         studentName: user.name,
+        studentId: user.studentId || '',
         room_no: user.room_no,
+        hostel: user.hostel || (user.gender === 'Female' ? 'girls' : 'boys'),
         month: new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' }),
         totalAmount: 6500,
         usedAmount: 4200,
@@ -57,12 +78,17 @@ router.get('/bill', fetchuser, async (req, res) => {
     return res.json({
       response: true,
       bill: {
+        _id: bill._id,
         total: String(bill.totalAmount),
         used: String(bill.usedAmount),
         balance: String(bill.balance),
         status: bill.status,
         month: bill.month,
         dueDate: bill.dueDate,
+        studentName: bill.studentName,
+        studentId: bill.studentId,
+        hostel: bill.hostel,
+        room_no: bill.room_no,
         paymentHistory: bill.paymentHistory
       }
     });
@@ -77,13 +103,26 @@ router.get('/bill', fetchuser, async (req, res) => {
  * GET /api/m/bills
  * Get all student mess bills
  * Protected: Admin (Mess Manager / Warden)
+ * Supports query: ?hostel=boys|girls|all
  */
 router.get('/bills', fetchadmin, async (req, res) => {
   try {
-    const bills = await MessBill.find().sort({ date: -1 });
+    const access = resolveHostelAccess(req.admin, req.query.hostel);
+    if (access.forbidden) {
+      return res.status(403).json({ response: false, message: access.error });
+    }
+
+    const query = {};
+    if (access.hostel) {
+      query.hostel = access.hostel;
+    }
+
+    const bills = await MessBill.find(query).sort({ date: -1 });
     return res.json({
       response: true,
-      bills
+      activeHostelFilter: access.hostel || 'all',
+      bills,
+      count: bills.length
     });
   } catch (err) {
     console.error('Error in /api/m/bills:', err.message);
@@ -96,10 +135,10 @@ router.get('/bills', fetchadmin, async (req, res) => {
  * Generate or update a student's monthly mess bill
  * Protected: Admin
  * 
- * Body: { userId, month, totalAmount, usedAmount }
+ * Body: { userId, month, totalAmount, usedAmount, status }
  */
 router.post('/generate', fetchadmin, async (req, res) => {
-  const { userId, month, totalAmount, usedAmount } = req.body;
+  const { userId, month, totalAmount, usedAmount, status } = req.body;
 
   if (!userId) {
     return res.status(400).json({ response: false, message: 'User ID is required.' });
@@ -118,12 +157,14 @@ router.post('/generate', fetchadmin, async (req, res) => {
     const bill = await MessBill.create({
       user_id: user._id,
       studentName: user.name,
+      studentId: user.studentId || '',
       room_no: user.room_no || 0,
+      hostel: user.hostel || (user.gender === 'Female' ? 'girls' : 'boys'),
       month: month || new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' }),
       totalAmount: total,
       usedAmount: used,
       balance: balance,
-      status: balance > 0 ? 'Paid' : 'Pending'
+      status: status || (balance === 0 ? 'Paid' : 'Pending')
     });
 
     return res.status(201).json({
@@ -134,6 +175,46 @@ router.post('/generate', fetchadmin, async (req, res) => {
 
   } catch (err) {
     console.error('Error in /api/m/generate:', err.message);
+    return res.status(500).json({ response: false, message: 'Internal server error.' });
+  }
+});
+
+/**
+ * PATCH /api/m/billstatus
+ * Update a student's mess bill payment status
+ * Protected: Admin
+ * Body: { billId: string, status: 'Paid' | 'Pending' | 'Overdue' }
+ */
+router.patch('/billstatus', fetchadmin, async (req, res) => {
+  const { billId, status } = req.body;
+
+  if (!billId || !status) {
+    return res.status(400).json({ response: false, message: 'Bill ID and status are required.' });
+  }
+
+  const validStatuses = ['Paid', 'Pending', 'Overdue'];
+  if (!validStatuses.includes(status)) {
+    return res.status(400).json({ response: false, message: 'Status must be Paid, Pending, or Overdue.' });
+  }
+
+  try {
+    const bill = await MessBill.findByIdAndUpdate(
+      billId,
+      { status },
+      { new: true }
+    );
+
+    if (!bill) {
+      return res.status(404).json({ response: false, message: 'Mess bill not found.' });
+    }
+
+    return res.json({
+      response: true,
+      message: `Bill status updated to "${status}" successfully.`,
+      bill
+    });
+  } catch (err) {
+    console.error('Error in /api/m/billstatus:', err.message);
     return res.status(500).json({ response: false, message: 'Internal server error.' });
   }
 });

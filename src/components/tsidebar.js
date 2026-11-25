@@ -44,14 +44,19 @@ export const Vmodalopen = (e) => {
 export const Disableli = (e) => {
   ['complainsli', 'leavepassli', 'feedbackli', 'attendanceli'].forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.classList.add('opacity-50', 'pointer-events-none');
+    if (el) {
+      el.classList.add('opacity-75');
+      el.classList.remove('pointer-events-none');
+    }
   });
 };
 
 export const NODisableli = (e) => {
   ['complainsli', 'leavepassli', 'feedbackli', 'attendanceli'].forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.classList.remove('opacity-50', 'pointer-events-none');
+    if (el) {
+      el.classList.remove('opacity-75', 'opacity-50', 'pointer-events-none');
+    }
   });
 };
 

@@ -29,6 +29,7 @@ export const Adminhome = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [floorFilter, setFloorFilter] = useState("all");
+  const [hostelFilter, setHostelFilter] = useState("all");
   const [alert, setAlert] = useState({ show: false, message: '', type: 'info' });
 
   useEffect(() => {
@@ -46,13 +47,14 @@ export const Adminhome = () => {
     dispatch({ type: 'UPDATE_AVALUE', payload: true });
   }
 
-  const fetchAllAdminData = async () => {
+  const fetchAllAdminData = async (hFilter = hostelFilter) => {
     setRefreshing(true);
     const token = localStorage.getItem('admintoken');
 
     try {
-      // 1. Fetch all allotted residents & rooms
-      const resUsers = await fetch(`http://${state.backend}:${state.port}/api/ad/getallusers`, {
+      // 1. Fetch all allotted residents & rooms filtered by hostel
+      const queryParam = hFilter && hFilter !== 'all' ? `?hostel=${hFilter}` : '';
+      const resUsers = await fetch(`http://${state.backend}:${state.port}/api/ad/getallusers${queryParam}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -62,11 +64,13 @@ export const Adminhome = () => {
       const jsonUsers = await resUsers.json();
       if (jsonUsers.response && Array.isArray(jsonUsers.data)) {
         setResidents(jsonUsers.data);
+      } else if (!jsonUsers.response && resUsers.status === 403) {
+        setAlert({ show: true, message: jsonUsers.message || 'Access restricted for your warden role.', type: 'error' });
       }
 
-      // 2. Fetch all pending complaints count
+      // 2. Fetch pending complaints count
       try {
-        const resComps = await fetch(`http://${state.backend}:${state.port}/api/ad/allcomplains`, {
+        const resComps = await fetch(`http://${state.backend}:${state.port}/api/ad/allcomplains${queryParam}`, {
           method: 'GET',
           headers: { 'Content-Type': 'application/json', 'auth-token': token },
         });
@@ -78,9 +82,9 @@ export const Adminhome = () => {
         console.error("Error fetching complaints count:", e);
       }
 
-      // 3. Fetch all passes count
+      // 3. Fetch passes count
       try {
-        const resPasses = await fetch(`http://${state.backend}:${state.port}/api/ad/getallpasses`, {
+        const resPasses = await fetch(`http://${state.backend}:${state.port}/api/ad/getallpasses${queryParam}`, {
           method: 'GET',
           headers: { 'Content-Type': 'application/json', 'auth-token': token },
         });
@@ -101,7 +105,12 @@ export const Adminhome = () => {
     }
   };
 
-  const totalCapacity = 60; // 20 per floor across 3 floors
+  const handleHostelFilterChange = (newHostel) => {
+    setHostelFilter(newHostel);
+    fetchAllAdminData(newHostel);
+  };
+
+  const totalCapacity = hostelFilter === 'all' ? 120 : 60; // 60 each, 120 total
   const occupiedCount = residents.length;
   const availableCount = Math.max(0, totalCapacity - occupiedCount);
   const occupancyRate = ((occupiedCount / totalCapacity) * 100).toFixed(0);
@@ -221,8 +230,39 @@ export const Adminhome = () => {
               </CardDescription>
             </div>
 
-            {/* Controls: Search and Floor Filters */}
+            {/* Controls: Search, Hostel Tabs, and Floor Filters */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              {/* Hostel Selector Tabs */}
+              <div className="flex p-1 rounded-xl bg-slate-100 border border-slate-200/60 self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => handleHostelFilterChange('all')}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    hostelFilter === 'all' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  All Hostels
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleHostelFilterChange('boys')}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    hostelFilter === 'boys' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Boys Hostel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleHostelFilterChange('girls')}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    hostelFilter === 'girls' ? 'bg-rose-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Girls Hostel
+                </button>
+              </div>
+
               {/* Search Bar */}
               <div className="relative">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -231,7 +271,7 @@ export const Adminhome = () => {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search name, room, email..."
-                  className="pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all outline-none w-full sm:w-64"
+                  className="pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all outline-none w-full sm:w-48"
                 />
               </div>
 
@@ -291,9 +331,10 @@ export const Adminhome = () => {
                   <tr>
                     <th className="py-3.5 px-4">Room No</th>
                     <th className="py-3.5 px-4">Resident Student</th>
-                    <th className="py-3.5 px-4">Email ID</th>
                     <th className="py-3.5 px-4">Hostel Wing</th>
-                    <th className="py-3.5 px-4">Allotment Status</th>
+                    <th className="py-3.5 px-4">Gender</th>
+                    <th className="py-3.5 px-4">Email ID</th>
+                    <th className="py-3.5 px-4">Status</th>
                     <th className="py-3.5 px-4 text-right">Direct Action</th>
                   </tr>
                 </thead>
@@ -305,10 +346,16 @@ export const Adminhome = () => {
                       ? '1st Floor' 
                       : '2nd Floor';
 
+                    const isGirlsHostel = r.hostel === 'girls' || r.gender === 'Female';
+
                     return (
                       <tr key={idx} className="hover:bg-slate-50/60 transition-colors">
                         <td className="py-3.5 px-4">
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 font-bold text-xs border border-blue-200/60">
+                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-bold text-xs border ${
+                            isGirlsHostel
+                              ? 'bg-rose-50 text-rose-700 border-rose-200/80'
+                              : 'bg-blue-50 text-blue-700 border-blue-200/80'
+                          }`}>
                             <DoorClosed className="w-3.5 h-3.5" />
                             Room {r.room_no}
                           </span>
@@ -316,11 +363,20 @@ export const Adminhome = () => {
                         <td className="py-3.5 px-4 font-bold text-slate-900">
                           {r.name}
                         </td>
+                        <td className="py-3.5 px-4">
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold border ${
+                            isGirlsHostel
+                              ? 'bg-rose-50 text-rose-700 border-rose-200'
+                              : 'bg-blue-50 text-blue-700 border-blue-200'
+                          }`}>
+                            {isGirlsHostel ? '👩 Girls Hostel (Kaveri)' : '👨 Boys Hostel (Mega)'} &bull; {floorLabel}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 text-slate-700 text-xs font-semibold">
+                          {r.gender || (isGirlsHostel ? 'Female' : 'Male')}
+                        </td>
                         <td className="py-3.5 px-4 text-slate-600 font-mono text-xs">
                           {r.email}
-                        </td>
-                        <td className="py-3.5 px-4 text-slate-500 font-medium">
-                          {floorLabel} &bull; Wing A
                         </td>
                         <td className="py-3.5 px-4">
                           <Badge variant="success" size="sm" dot>Occupied</Badge>
